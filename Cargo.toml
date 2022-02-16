@@ -1,0 +1,12 @@
+#![no_std]
+
+[package]
+name = "stuw81300"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+embedded-hal = "0.2"
+
+[dev-dependencies]
+embedded-hal-mock = "0.8"
