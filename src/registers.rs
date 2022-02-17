@@ -34,7 +34,7 @@ impl RegisterAddr {
 }
 
 pub(crate) trait Register {
-    fn addr(&self) -> RegisterAddr;
+    fn addr() -> RegisterAddr;
 }
 
 // Utilities
@@ -66,12 +66,12 @@ macro_rules! register {
         $($flag:ident: $pos:literal,)*
      }) => {
         #[derive(Debug, PartialEq)]
-        struct $name {
-            $($num: u32,)*
-            $($flag: bool,)*
+        pub(crate) struct $name {
+            $(pub(crate) $num: u32,)*
+            $(pub(crate) $flag: bool,)*
         }
         impl Register for $name {
-            fn addr(&self) -> RegisterAddr {
+            fn addr() -> RegisterAddr {
                 RegisterAddr::$name
             }
         }
