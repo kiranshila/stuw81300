@@ -1,8 +1,12 @@
+#![cfg_attr(not(test), no_std)]
+
+///! This is an `embedded-hal` crate for the (STuW81300)[https://www.st.com/en/wireless-connectivity/stuw81300.html] integrated VCO/PLL chip.
+///! Eventually I hope to cover the entire capabilities of the chip as a nice example of a complicated embedded-hal SPI driver.
+///!
 ///! # Not yet implemented
-///! ## Fractional Spurs and Compensation Control
-///! * PFD delay mode
 ///! * Charge pump leakage current
 ///! * Down-split current
+///! * RF2 Output
 mod api;
 mod mock;
 mod registers;

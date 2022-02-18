@@ -11,12 +11,6 @@ enum AccessMode {
     Read = 1,
 }
 
-/// Exported SPI Mode 0 (Datasheet spec)
-pub const MODE: hal::spi::Mode = hal::spi::Mode {
-    polarity: hal::spi::Polarity::IdleLow,
-    phase: hal::spi::Phase::CaptureOnFirstTransition,
-};
-
 impl<SPI, LE, E> STuW81300<SPI, LE>
 where
     SPI: Transfer<u8, Error = E>,

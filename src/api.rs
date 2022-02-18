@@ -1,10 +1,11 @@
 use crate::registers as regs;
 use crate::STuW81300;
-use regs::RegisterAddr;
-
 use embedded_hal as hal;
 use hal::blocking::spi::Transfer;
 use hal::digital::v2::OutputPin;
+#[allow(unused_imports)]
+use micromath::F32Ext;
+use regs::RegisterAddr;
 
 const MAX_MOD: u32 = 2097151;
 
@@ -434,6 +435,7 @@ where
         Ok(st10.reg_dig_ocp || st10.reg_ref_ocp || st10.reg_rf_ocp || st10.reg_vco_4v5_ocp)
     }
 
+    /* // TODO Fix this
     /// Dumps the contents of all the registers to stdout
     pub fn dump_regs(&mut self) -> Result<(), E> {
         let st0: regs::ST0 = self.read_reg()?;
@@ -459,6 +461,7 @@ where
         println!("{:#?}", st10);
         Ok(())
     }
+    */
 }
 
 #[cfg(test)]
@@ -539,7 +542,6 @@ mod tests {
 
         vco.set_output_frequency(8e9).unwrap();
         assert_eq!(vco.get_output_frequency().unwrap(), 8e9);
-        vco.dump_regs().unwrap();
         assert_eq!(vco.get_calibrator_frequency().unwrap(), 250e3);
     }
 }
