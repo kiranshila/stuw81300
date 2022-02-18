@@ -9,6 +9,7 @@ mod registers;
 mod spi;
 
 /// Enum representation of the pin 36 supply voltage
+#[derive(Debug, PartialEq)]
 pub enum SupplyVoltage {
     /// Input voltage is 3.6 to 5.4
     LowVoltage,
@@ -16,15 +17,34 @@ pub enum SupplyVoltage {
     HighVoltage,
 }
 
+/// The connection type of the reference clock
+#[repr(u32)]
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum ReferenceType {
+    /// Ref clock is connected to pin 21
+    SingleEnded = 3,
+    /// Reference clock is differential between 20 and 21
+    Differential = 1,
+    /// Crystal oscillator connected between 20 and 21
+    Crystal = 2,
+}
+
 pub struct STuW81300<SPI, LE> {
     spi: SPI,
     le: LE,
     supply_voltage: SupplyVoltage,
     ref_freq: f32,
+    ref_type: ReferenceType,
 }
 
 impl<SPI, LE> STuW81300<SPI, LE> {
-    pub fn new(spi: SPI, le: LE, supply_voltage: SupplyVoltage, ref_freq: f32) -> Self {
+    pub fn new(
+        spi: SPI,
+        le: LE,
+        supply_voltage: SupplyVoltage,
+        ref_freq: f32,
+        ref_type: ReferenceType,
+    ) -> Self {
         assert!(
             (10e6..=800e6).contains(&ref_freq),
             "Reference frequency out of range"
@@ -34,6 +54,7 @@ impl<SPI, LE> STuW81300<SPI, LE> {
             le,
             supply_voltage,
             ref_freq,
+            ref_type,
         }
     }
 }

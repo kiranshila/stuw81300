@@ -10,6 +10,7 @@ const MAX_MOD: u32 = 2097151;
 
 // Public Enums
 #[repr(u32)]
+#[derive(PartialEq)]
 pub enum ReferenceClockPath {
     Direct,
     Doubled,
@@ -62,7 +63,30 @@ where
 
     /// Initializes the device
     pub fn init(&mut self) -> Result<(), E> {
+        // Initialization register
         self.write(RegisterAddr::ST9, 0)?;
+        // Read device_id
+        let device_id = self.device_id()?;
+
+        // Power settings
+        let mut st4: regs::ST4 = self.read_reg()?;
+        match device_id {
+            // STUW81300-1T and STUW81300-1TR
+            0x804B => {
+                st4.calb_3v3_mode1 = false;
+                st4.calb_3v3_mode0 = false;
+            }
+            // STUW81300T and STUW81300TR
+            0x8052 => {
+                st4.calb_3v3_mode1 = self.supply_voltage == crate::SupplyVoltage::LowVoltage;
+                st4.calb_3v3_mode0 = self.supply_voltage == crate::SupplyVoltage::LowVoltage;
+            }
+            _ => unreachable!(),
+        }
+        st4.rf_out_3v3 = self.supply_voltage == crate::SupplyVoltage::LowVoltage;
+        st4.ref_buff_mode = self.ref_type as u32;
+
+        self.write_reg(&st4)?;
         Ok(())
     }
 
@@ -85,6 +109,12 @@ where
                 path,
                 ReferenceClockPath::Halved | ReferenceClockPath::Quartered | ReferenceClockPath::Direct
             ),"Reference clock path cannot be doubled if the reference clock is higher than 25 MHz");
+        }
+        if self.ref_type == crate::ReferenceType::Differential {
+            assert!(
+                path != ReferenceClockPath::Doubled,
+                "Reference clock path of doubled is not applicable in differential mode"
+            );
         }
 
         let mut st3: regs::ST3 = self.read_reg()?;
@@ -181,6 +211,7 @@ where
     }
 
     /// Sets the divider ratio, maximizing MOD to reduce frequency error
+    /// Also, the calibrator frequency is set accordingly to the maximum of 250 kHz
     pub fn set_divider_ratio(&mut self, n: f32) -> Result<(), E> {
         assert!(n >= 24f32, "Division ratio must be greater than 23");
         // Valid divider ratios are controlled by the DSM, if there is a fraction part
@@ -247,9 +278,11 @@ where
     }
 
     /// Sets the desired output frequency
+    /// Only RF1 (3-8 GHz) at the moment
     /// There are an infinite number of solutions for the various configurations in this device,
     /// so the strategy here is to minimize spurs. It does this by maximizing FRAC and MOD, keeping the
     /// same FRAC/MOD ratio and setting DITHERING to 1. As a drawback, there will be small frequency error.
+    /// Also, the calibrator frequency is set accordingly to the maximum of 250 kHz
     ///
     /// This function may fail if the computed divider ratio isn't feasable, in which case changes to the DSM order
     /// and reference divider network may be necessary
@@ -264,6 +297,20 @@ where
             self.set_pll_path(PllPath::Direct)?;
         }
         self.set_divider_ratio(n)?;
+
+        if n <= 512.0 {
+            let caldiv = (fpfd / 250e3).floor() as u32;
+            self.set_calibrator_division(caldiv)?;
+        } else {
+            panic!("Integer-only mode (N>=512) must be configured manually");
+        }
+
+        let mut st4: regs::ST4 = self.read_reg()?;
+        match self.supply_voltage {
+            crate::SupplyVoltage::LowVoltage => st4.vcalb_mode = true,
+            crate::SupplyVoltage::HighVoltage => st4.vcalb_mode = f > 4500e6,
+        };
+        self.write_reg(&st4)?;
 
         Ok(())
     }
@@ -305,6 +352,86 @@ where
         let mut st0: regs::ST0 = self.read_reg()?;
         st0.pfd_del = delay as u32;
         self.write_reg(&st0)
+    }
+
+    /// Sets the charge pump scaling factor to 0..31*Imin
+    pub fn set_charge_pump(&mut self, scale: u32) -> Result<(), E> {
+        assert!((scale <= 31), "Charge pump scale must be less than 32");
+        let mut st0: regs::ST0 = self.read_reg()?;
+        st0.cp_sel = scale;
+        self.write_reg(&st0)
+    }
+
+    /// Gets the charge pump scaling factor
+    pub fn get_charge_pump(&mut self) -> Result<u32, E> {
+        let st0: regs::ST0 = self.read_reg()?;
+        Ok(st0.cp_sel)
+    }
+
+    // VCO Settings
+
+    /// Sets the VCO calibrator division factor
+    /// Must be between 0 and 511
+    pub fn set_calibrator_division(&mut self, div: u32) -> Result<(), E> {
+        assert!(div <= 511, "VCO Calibrator division must be less than 512");
+        let mut st6: regs::ST6 = self.read_reg()?;
+        st6.cal_div = div;
+        self.write_reg(&st6)
+    }
+
+    /// Gets the current VCO calibration division
+    pub fn get_calibrator_division(&mut self) -> Result<u32, E> {
+        let st6: regs::ST6 = self.read_reg()?;
+        Ok(st6.cal_div)
+    }
+
+    /// Gets the current VCO calibration frequency
+    pub fn get_calibrator_frequency(&mut self) -> Result<f32, E> {
+        let st6: regs::ST6 = self.read_reg()?;
+        let fpfd = self.get_pfd_frequency()?;
+        Ok(fpfd / st6.cal_div as f32)
+    }
+
+    /// Set VCO amplitude
+    /// Valid amplitude settings range from 0-2 for `LowVoltage` supply and 0-7 for `HighVoltage`
+    /// It is recommended for phase noise's sake to set this to the maximum allowed by the supply
+    /// Of course, a lower setting here reduces the power consumption
+    pub fn set_vco_amplitude(&mut self, amplitude: u32) -> Result<(), E> {
+        match self.supply_voltage {
+            crate::SupplyVoltage::LowVoltage => assert!(
+                amplitude <= 2,
+                "Low voltage supplies must have a maximum amplitude of 2"
+            ),
+            crate::SupplyVoltage::HighVoltage => {
+                assert!(amplitude <= 7, "Amplitude has a maximum value of 7")
+            }
+        };
+        let mut st4: regs::ST4 = self.read_reg()?;
+        st4.vco_amp = amplitude;
+        self.write_reg(&st4)
+    }
+
+    // Status stuff
+
+    /// Gets the lock state of the PLL
+    pub fn is_locked(&mut self) -> Result<bool, E> {
+        let st10: regs::ST10 = self.read_reg()?;
+        Ok(st10.lock_det)
+    }
+
+    /// Returns true if all the cores startup properly
+    pub fn is_startup(&mut self) -> Result<bool, E> {
+        let st10: regs::ST10 = self.read_reg()?;
+        Ok(st10.reg_dig_startup
+            && st10.reg_ref_startup
+            && st10.reg_rf_startup
+            && st10.reg_vco_4v5_startup)
+    }
+
+    /// Returns true if any of the cores threw an overcurrent flag
+    pub fn is_ocp(&mut self) -> Result<bool, E> {
+        let st10: regs::ST10 = self.read_reg()?;
+        Ok(st10.reg_dig_ocp || st10.reg_ref_ocp || st10.reg_rf_ocp || st10.reg_vco_4v5_ocp)
     }
 
     /// Dumps the contents of all the registers to stdout
@@ -358,6 +485,7 @@ mod tests {
             le,
             supply_voltage: crate::SupplyVoltage::HighVoltage,
             ref_freq: 100e6,
+            ref_type: crate::ReferenceType::SingleEnded,
         }
     }
 
@@ -367,6 +495,7 @@ mod tests {
             le: MockStuw81300LE::default(),
             supply_voltage: crate::SupplyVoltage::HighVoltage,
             ref_freq: 100e6,
+            ref_type: crate::ReferenceType::SingleEnded,
         }
     }
 
@@ -383,12 +512,6 @@ mod tests {
     }
 
     #[test]
-    fn init() {
-        let mut vco = spi_tester(vec![0x48, 0, 0, 0], vec![0, 0, 0, 0]);
-        vco.init().unwrap();
-    }
-
-    #[test]
     fn complete_mock() {
         let mut vco = mock_tester();
         vco.init().unwrap();
@@ -402,6 +525,7 @@ mod tests {
         vco.set_dithering(true).unwrap();
         vco.set_pfd_delay(PfdDelay::Default).unwrap();
         vco.set_pfd_delay_mode(PfdDelayMode::VcoDivDelay).unwrap();
+        vco.set_vco_amplitude(7).unwrap();
 
         vco.set_output_frequency(7625e6).unwrap();
         assert_eq!(vco.get_output_frequency().unwrap(), 7625e6);
@@ -412,5 +536,10 @@ mod tests {
         // 43.3 Hz of error in this case
         vco.set_output_frequency(3150123456.7).unwrap();
         assert_eq!(vco.get_output_frequency().unwrap(), 3150123500.0);
+
+        vco.set_output_frequency(8e9).unwrap();
+        assert_eq!(vco.get_output_frequency().unwrap(), 8e9);
+        vco.dump_regs().unwrap();
+        assert_eq!(vco.get_calibrator_frequency().unwrap(), 250e3);
     }
 }

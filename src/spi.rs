@@ -114,6 +114,7 @@ mod tests {
             le,
             supply_voltage: crate::SupplyVoltage::HighVoltage,
             ref_freq: 100e6,
+            ref_type: crate::ReferenceType::SingleEnded,
         }
     }
 
