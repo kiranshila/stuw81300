@@ -33,34 +33,23 @@ where
         Ok(u32::from_be_bytes(buf))
     }
 
-    fn read(&mut self, addr: RegisterAddr) -> Result<u32, E> {
+    pub(crate) fn read(&mut self, addr: RegisterAddr) -> Result<u32, E> {
         self.operate(addr, 0, AccessMode::Read)
     }
 
-    fn write(&mut self, addr: RegisterAddr, data: u32) -> Result<(), E> {
+    pub(crate) fn write(&mut self, addr: RegisterAddr, data: u32) -> Result<(), E> {
         self.operate(addr, data, AccessMode::Write)?;
         Ok(())
     }
 
-    /// Retrieves the device id, either 0x804B or 0x8052
-    pub fn device_id(&mut self) -> Result<u32, E> {
-        self.read(RegisterAddr::ST11)
-    }
-
-    /// Initializes the device
-    pub fn init(&mut self) -> Result<(), E> {
-        self.write(RegisterAddr::ST9, 0)?;
-        Ok(())
-    }
-
-    fn read_reg<R>(&mut self) -> Result<R, E>
+    pub(crate) fn read_reg<R>(&mut self) -> Result<R, E>
     where
         R: Register + From<u32>,
     {
         self.read(R::addr()).map(Into::into)
     }
 
-    fn write_reg<'a, R>(&mut self, register: &'a R) -> Result<(), E>
+    pub(crate) fn write_reg<'a, R>(&mut self, register: &'a R) -> Result<(), E>
     where
         R: Register,
         &'a R: Into<u32>,
@@ -126,18 +115,6 @@ mod tests {
             supply_voltage: crate::SupplyVoltage::HighVoltage,
             ref_freq: 100e6,
         }
-    }
-
-    #[test]
-    fn device_id() {
-        let mut vco = spi_tester(vec![0xd8, 0, 0, 0], vec![0, 0, 0x80, 0x52]);
-        assert_eq!(vco.device_id().unwrap(), 0x8052);
-    }
-
-    #[test]
-    fn init() {
-        let mut vco = spi_tester(vec![0x48, 0, 0, 0], vec![0, 0, 0, 0]);
-        vco.init().unwrap();
     }
 
     #[test]

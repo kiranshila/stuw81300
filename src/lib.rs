@@ -1,3 +1,10 @@
+///! # Not yet implemented
+///! ## Fractional Spurs and Compensation Control
+///! * PFD delay mode
+///! * Charge pump leakage current
+///! * Down-split current
+mod api;
+mod mock;
 mod registers;
 mod spi;
 
@@ -18,6 +25,10 @@ pub struct STuW81300<SPI, LE> {
 
 impl<SPI, LE> STuW81300<SPI, LE> {
     pub fn new(spi: SPI, le: LE, supply_voltage: SupplyVoltage, ref_freq: f32) -> Self {
+        assert!(
+            (10e6..=800e6).contains(&ref_freq),
+            "Reference frequency out of range"
+        );
         STuW81300 {
             spi,
             le,
