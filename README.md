@@ -1,4 +1,5 @@
-![Maintenance](https://img.shields.io/badge/maintenance-activly--developed-brightgreen.svg)
+![Maintenance](https://img.shields.io/badge/maintenance-passivley--developed-brightgreen.svg)
+[![codecov](https://codecov.io/gh/kiranshila/stuw81300/branch/main/graph/badge.svg?token=PDFYBODGMU)](https://codecov.io/gh/kiranshila/stuw81300)
 
 # stuw81300
 
