@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::registers::{Register, RegisterAddr};
 use crate::STuW81300;
 use embedded_hal as hal;
@@ -11,39 +12,46 @@ enum AccessMode {
     Read = 1,
 }
 
-impl<SPI, LE, E> STuW81300<SPI, LE>
+impl<SPI, LE> STuW81300<SPI, LE>
 where
-    SPI: Transfer<u8, Error = E>,
-    LE: OutputPin<Error = E>,
+    SPI: Transfer<u8>,
+    LE: OutputPin,
 {
-    fn operate(&mut self, addr: RegisterAddr, data: u32, mode: AccessMode) -> Result<u32, E> {
+    fn operate(
+        &mut self,
+        addr: RegisterAddr,
+        data: u32,
+        mode: AccessMode,
+    ) -> Result<u32, Error<SPI, LE>> {
         // Pack data
         let mut buf = pack(addr, data, mode);
         // Perform transaction. Do we care about timing?
-        self.le.set_low()?;
-        self.spi.transfer(&mut buf)?;
-        self.le.set_high()?;
+        self.le.set_low().map_err(|e| Error::LatchEnable(e))?;
+        self.spi
+            .transfer(&mut buf)
+            .map_err(|e| Error::Transfer(e))?;
+        self.le.set_high().map_err(|e| Error::LatchEnable(e))?;
         // Extract data
         Ok(u32::from_be_bytes(buf))
     }
 
-    pub(crate) fn read(&mut self, addr: RegisterAddr) -> Result<u32, E> {
+    pub(crate) fn read(&mut self, addr: RegisterAddr) -> Result<u32, Error<SPI, LE>> {
         self.operate(addr, 0, AccessMode::Read)
     }
 
-    pub(crate) fn write(&mut self, addr: RegisterAddr, data: u32) -> Result<(), E> {
+    pub(crate) fn write(&mut self, addr: RegisterAddr, data: u32) -> Result<(), Error<SPI, LE>> {
         self.operate(addr, data, AccessMode::Write)?;
         Ok(())
     }
 
-    pub(crate) fn read_reg<R>(&mut self) -> Result<R, E>
+    pub(crate) fn read_reg<R>(&mut self) -> Result<R, Error<SPI, LE>>
     where
         R: Register + From<u32>,
     {
         self.read(R::addr()).map(Into::into)
     }
 
-    pub(crate) fn write_reg<'a, R>(&mut self, register: &'a R) -> Result<(), E>
+    pub(crate) fn write_reg<'a, R>(&mut self, register: &'a R) -> Result<(), Error<SPI, LE>>
     where
         R: Register,
         &'a R: Into<u32>,

@@ -8,6 +8,7 @@
 ///! * Down-split current
 ///! * RF2 Output
 mod api;
+mod error;
 mod mock;
 mod registers;
 mod spi;

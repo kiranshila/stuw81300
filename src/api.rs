@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::registers as regs;
 use crate::STuW81300;
 use embedded_hal as hal;
@@ -52,18 +53,18 @@ pub enum PfdDelay {
     ThreeZero,
 }
 
-impl<SPI, LE, E> STuW81300<SPI, LE>
+impl<SPI, LE> STuW81300<SPI, LE>
 where
-    SPI: Transfer<u8, Error = E>,
-    LE: OutputPin<Error = E>,
+    SPI: Transfer<u8>,
+    LE: OutputPin,
 {
     /// Retrieves the device id, either 0x804B or 0x8052
-    pub fn device_id(&mut self) -> Result<u32, E> {
+    pub fn device_id(&mut self) -> Result<u32, Error<SPI, LE>> {
         self.read(RegisterAddr::ST11)
     }
 
     /// Initializes the device
-    pub fn init(&mut self) -> Result<(), E> {
+    pub fn init(&mut self) -> Result<(), Error<SPI, LE>> {
         // Initialization register
         self.write(RegisterAddr::ST9, 0)?;
         // Read device_id
@@ -94,7 +95,10 @@ where
     /// Sets the reference clock path
     /// This setting in combination with `set_reference_clock_divider` controls the frequency
     /// of the PFD. The result of which can be found with `get_pfd_frequency`
-    pub fn set_reference_clock_path(&mut self, path: ReferenceClockPath) -> Result<(), E> {
+    pub fn set_reference_clock_path(
+        &mut self,
+        path: ReferenceClockPath,
+    ) -> Result<(), Error<SPI, LE>> {
         if (self.ref_freq >= 400e6) && (self.ref_freq <= 800e6) {
             assert!(
                 matches!(path, ReferenceClockPath::Quartered),
@@ -125,7 +129,7 @@ where
     }
 
     /// Sets the reference clock divider for the PFD. This must be between 1 and 8191.
-    pub fn set_reference_clock_divider(&mut self, r: u32) -> Result<(), E> {
+    pub fn set_reference_clock_divider(&mut self, r: u32) -> Result<(), Error<SPI, LE>> {
         assert!(
             (1..=8191).contains(&r),
             "The reference clock divider ratio must be between 1 and 8191"
@@ -136,7 +140,7 @@ where
     }
 
     /// Gets the internal phase-frequency detector (PFD) frequency in Hz
-    pub fn get_pfd_frequency(&mut self) -> Result<f32, E> {
+    pub fn get_pfd_frequency(&mut self) -> Result<f32, Error<SPI, LE>> {
         let st3: regs::ST3 = self.read_reg()?;
         let r = st3.r as f32;
         let first_stage = match st3.ref_path_sel {
@@ -150,7 +154,7 @@ where
     }
 
     /// Gets the current output frequency in Hz
-    pub fn get_output_frequency(&mut self) -> Result<f32, E> {
+    pub fn get_output_frequency(&mut self) -> Result<f32, Error<SPI, LE>> {
         // Grab all the registers we need to calculate this
         let st0: regs::ST0 = self.read_reg()?;
         let st1: regs::ST1 = self.read_reg()?;
@@ -174,7 +178,7 @@ where
     /// Set the dithering function, used to reduce the fractional spur tones by
     /// spreading the DSM sequence and consequently the energy of the spurs over
     /// a wider bandwidth
-    pub fn set_dithering(&mut self, active: bool) -> Result<(), E> {
+    pub fn set_dithering(&mut self, active: bool) -> Result<(), Error<SPI, LE>> {
         let mut st6: regs::ST6 = self.read_reg()?;
         st6.dithering = active;
         self.write_reg(&st6)
@@ -182,14 +186,14 @@ where
 
     /// Sets the delta-sigma modulator order. Only has an effect when the divider ratio has
     /// fractional components. It is recommended to use the `ThirdOrder` setting.
-    pub fn set_dsm_order(&mut self, order: DsmOrder) -> Result<(), E> {
+    pub fn set_dsm_order(&mut self, order: DsmOrder) -> Result<(), Error<SPI, LE>> {
         let mut st6: regs::ST6 = self.read_reg()?;
         st6.dsm_order = order as u32;
         self.write_reg(&st6)
     }
 
     /// Sets the MOD value for Fractional-N operation
-    pub fn set_mod(&mut self, modu: u32) -> Result<(), E> {
+    pub fn set_mod(&mut self, modu: u32) -> Result<(), Error<SPI, LE>> {
         assert!(
             (2..=MAX_MOD).contains(&modu),
             "MOD must be between 2 and 2097151"
@@ -200,7 +204,7 @@ where
     }
 
     /// Sets the FRAC value for Fractional-N operation, MOD must be set first
-    pub fn set_frac(&mut self, frac: u32) -> Result<(), E> {
+    pub fn set_frac(&mut self, frac: u32) -> Result<(), Error<SPI, LE>> {
         let st2: regs::ST2 = self.read_reg()?;
         assert!(
             frac <= st2.modu,
@@ -213,7 +217,7 @@ where
 
     /// Sets the divider ratio, maximizing MOD to reduce frequency error
     /// Also, the calibrator frequency is set accordingly to the maximum of 250 kHz
-    pub fn set_divider_ratio(&mut self, n: f32) -> Result<(), E> {
+    pub fn set_divider_ratio(&mut self, n: f32) -> Result<(), Error<SPI, LE>> {
         assert!(n >= 24f32, "Division ratio must be greater than 23");
         // Valid divider ratios are controlled by the DSM, if there is a fraction part
         let n_int = n.trunc();
@@ -263,14 +267,14 @@ where
     }
 
     /// Sets the signal path to the PLL. This must be `Halved` for VCO operation above 6 GHz.
-    pub fn set_pll_path(&mut self, path: PllPath) -> Result<(), E> {
+    pub fn set_pll_path(&mut self, path: PllPath) -> Result<(), Error<SPI, LE>> {
         let mut st1: regs::ST1 = self.read_reg()?;
         st1.pll_sel = path as u8 == 1;
         self.write_reg(&st1)
     }
 
     /// Gets the signal path to the PLL
-    pub fn get_pll_path(&mut self) -> Result<PllPath, E> {
+    pub fn get_pll_path(&mut self) -> Result<PllPath, Error<SPI, LE>> {
         let st1: regs::ST1 = self.read_reg()?;
         Ok(match st1.pll_sel {
             true => PllPath::Direct,
@@ -287,7 +291,7 @@ where
     ///
     /// This function may fail if the computed divider ratio isn't feasable, in which case changes to the DSM order
     /// and reference divider network may be necessary
-    pub fn set_output_frequency(&mut self, f: f32) -> Result<(), E> {
+    pub fn set_output_frequency(&mut self, f: f32) -> Result<(), Error<SPI, LE>> {
         self.set_dithering(true)?;
         let fpfd = self.get_pfd_frequency()?;
         let mut n = f / fpfd;
@@ -317,7 +321,7 @@ where
     }
 
     /// Gets the PFD delay mode
-    pub fn get_pfd_delay_mode(&mut self) -> Result<PfdDelayMode, E> {
+    pub fn get_pfd_delay_mode(&mut self) -> Result<PfdDelayMode, Error<SPI, LE>> {
         let st3: regs::ST3 = self.read_reg()?;
         Ok(match st3.pfd_del_mode {
             0 => PfdDelayMode::NoDelay,
@@ -329,14 +333,14 @@ where
 
     /// Sets the PFD delay mode
     /// It is recommended to set this to `VcoDivDelay`
-    pub fn set_pfd_delay_mode(&mut self, mode: PfdDelayMode) -> Result<(), E> {
+    pub fn set_pfd_delay_mode(&mut self, mode: PfdDelayMode) -> Result<(), Error<SPI, LE>> {
         let mut st3: regs::ST3 = self.read_reg()?;
         st3.pfd_del_mode = mode as u32;
         self.write_reg(&st3)
     }
 
     /// Get the current PFD delay
-    pub fn get_pfd_delay(&mut self) -> Result<PfdDelay, E> {
+    pub fn get_pfd_delay(&mut self) -> Result<PfdDelay, Error<SPI, LE>> {
         let st0: regs::ST0 = self.read_reg()?;
         Ok(match st0.pfd_del {
             0 => PfdDelay::Default,
@@ -349,14 +353,14 @@ where
 
     /// Sets the PFD delay
     /// It is recommended to set this to `Default`
-    pub fn set_pfd_delay(&mut self, delay: PfdDelay) -> Result<(), E> {
+    pub fn set_pfd_delay(&mut self, delay: PfdDelay) -> Result<(), Error<SPI, LE>> {
         let mut st0: regs::ST0 = self.read_reg()?;
         st0.pfd_del = delay as u32;
         self.write_reg(&st0)
     }
 
     /// Sets the charge pump scaling factor to 0..31*Imin
-    pub fn set_charge_pump(&mut self, scale: u32) -> Result<(), E> {
+    pub fn set_charge_pump(&mut self, scale: u32) -> Result<(), Error<SPI, LE>> {
         assert!((scale <= 31), "Charge pump scale must be less than 32");
         let mut st0: regs::ST0 = self.read_reg()?;
         st0.cp_sel = scale;
@@ -364,7 +368,7 @@ where
     }
 
     /// Gets the charge pump scaling factor
-    pub fn get_charge_pump(&mut self) -> Result<u32, E> {
+    pub fn get_charge_pump(&mut self) -> Result<u32, Error<SPI, LE>> {
         let st0: regs::ST0 = self.read_reg()?;
         Ok(st0.cp_sel)
     }
@@ -373,7 +377,7 @@ where
 
     /// Sets the VCO calibrator division factor
     /// Must be between 0 and 511
-    pub fn set_calibrator_division(&mut self, div: u32) -> Result<(), E> {
+    pub fn set_calibrator_division(&mut self, div: u32) -> Result<(), Error<SPI, LE>> {
         assert!(div <= 511, "VCO Calibrator division must be less than 512");
         let mut st6: regs::ST6 = self.read_reg()?;
         st6.cal_div = div;
@@ -381,13 +385,13 @@ where
     }
 
     /// Gets the current VCO calibration division
-    pub fn get_calibrator_division(&mut self) -> Result<u32, E> {
+    pub fn get_calibrator_division(&mut self) -> Result<u32, Error<SPI, LE>> {
         let st6: regs::ST6 = self.read_reg()?;
         Ok(st6.cal_div)
     }
 
     /// Gets the current VCO calibration frequency
-    pub fn get_calibrator_frequency(&mut self) -> Result<f32, E> {
+    pub fn get_calibrator_frequency(&mut self) -> Result<f32, Error<SPI, LE>> {
         let st6: regs::ST6 = self.read_reg()?;
         let fpfd = self.get_pfd_frequency()?;
         Ok(fpfd / st6.cal_div as f32)
@@ -397,7 +401,7 @@ where
     /// Valid amplitude settings range from 0-2 for `LowVoltage` supply and 0-7 for `HighVoltage`
     /// It is recommended for phase noise's sake to set this to the maximum allowed by the supply
     /// Of course, a lower setting here reduces the power consumption
-    pub fn set_vco_amplitude(&mut self, amplitude: u32) -> Result<(), E> {
+    pub fn set_vco_amplitude(&mut self, amplitude: u32) -> Result<(), Error<SPI, LE>> {
         match self.supply_voltage {
             crate::SupplyVoltage::LowVoltage => assert!(
                 amplitude <= 2,
@@ -415,13 +419,13 @@ where
     // Status stuff
 
     /// Gets the lock state of the PLL
-    pub fn is_locked(&mut self) -> Result<bool, E> {
+    pub fn is_locked(&mut self) -> Result<bool, Error<SPI, LE>> {
         let st10: regs::ST10 = self.read_reg()?;
         Ok(st10.lock_det)
     }
 
     /// Returns true if all the cores startup properly
-    pub fn is_startup(&mut self) -> Result<bool, E> {
+    pub fn is_startup(&mut self) -> Result<bool, Error<SPI, LE>> {
         let st10: regs::ST10 = self.read_reg()?;
         Ok(st10.reg_dig_startup
             && st10.reg_ref_startup
@@ -430,7 +434,7 @@ where
     }
 
     /// Returns true if any of the cores threw an overcurrent flag
-    pub fn is_ocp(&mut self) -> Result<bool, E> {
+    pub fn is_ocp(&mut self) -> Result<bool, Error<SPI, LE>> {
         let st10: regs::ST10 = self.read_reg()?;
         Ok(st10.reg_dig_ocp || st10.reg_ref_ocp || st10.reg_rf_ocp || st10.reg_vco_4v5_ocp)
     }

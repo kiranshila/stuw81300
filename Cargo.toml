@@ -1,6 +1,6 @@
 [package]
 name = "stuw81300"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 readme = "README.md"
 description = "An embedded-hal driver for the STuW81300"
